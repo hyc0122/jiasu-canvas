@@ -440,8 +440,42 @@ ipcMain.handle("session:clear", async () => {
 let mainWindow = null;
 /** @type {BrowserWindow | null} */
 let splashWindow = null;
+let mainWindowRevealed = false;
 
 registerUpdateIpc(() => mainWindow);
+
+/**
+ * Close cold-start splash and reveal the main window once (auth gate ready or safety timeout).
+ * @param {string} [reason]
+ */
+async function revealMainWindow(reason = "ready") {
+    if (mainWindowRevealed) {
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+            mainWindow.show();
+            mainWindow.focus();
+        }
+        return { ok: true, already: true };
+    }
+    mainWindowRevealed = true;
+    appendMainLog(`revealMainWindow: ${reason}`);
+    try {
+        await updateSplash(splashWindow, {
+            steps: ["done", "done", "done", "done"],
+            percent: 100,
+            subtitle: "工作台已就绪",
+        });
+    } catch {
+        // ignore
+    }
+    closeSplashWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        if (!mainWindow.isVisible()) mainWindow.show();
+        mainWindow.focus();
+    }
+    return { ok: true };
+}
+
+ipcMain.handle("app-shell:ready", async () => revealMainWindow("app-shell:ready"));
 
 function splashHtmlPath() {
     return path.join(__dirname, "splash.html");
@@ -570,7 +604,7 @@ function createWindow() {
         icon: windowIcon(),
         show: false,
         autoHideMenuBar: true,
-        backgroundColor: "#1c1917",
+        backgroundColor: "#ffffff",
         webPreferences: {
             preload: path.join(__dirname, "preload.cjs"),
             contextIsolation: true,
@@ -584,15 +618,16 @@ function createWindow() {
     });
 
     mainWindow.once("ready-to-show", () => {
-        void (async () => {
-            await updateSplash(splashWindow, {
-                steps: ["done", "done", "done", "done"],
-                percent: 100,
-                subtitle: "工作台已就绪",
-            });
-            closeSplashWindow();
-            mainWindow?.show();
-        })();
+        // Cold start: keep hidden until auth gate notify. Recreate (no splash): show now.
+        if (!splashWindow) {
+            void revealMainWindow("ready-to-show-no-splash");
+            return;
+        }
+        void updateSplash(splashWindow, {
+            steps: ["done", "done", "done", "now"],
+            percent: 92,
+            subtitle: "正在恢复会话",
+        });
     });
 
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -616,6 +651,7 @@ function createWindow() {
 
     mainWindow.on("closed", () => {
         mainWindow = null;
+        mainWindowRevealed = false;
     });
 
     mainWindow.loadFile(indexHtml);
@@ -664,13 +700,11 @@ if (!gotLock) {
 
         createWindow();
 
-        // Safety: never leave splash up forever if ready-to-show stalls.
+        // Safety: never leave splash up forever if auth-gate notify stalls.
         setTimeout(() => {
-            if (splashWindow && !splashWindow.isDestroyed()) {
-                appendMainLog("splash safety timeout; showing main window");
-                closeSplashWindow();
-                if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();
-            }
+            if (mainWindowRevealed) return;
+            appendMainLog("splash safety timeout; revealing main window");
+            void revealMainWindow("safety-timeout");
         }, 20000);
     });
 

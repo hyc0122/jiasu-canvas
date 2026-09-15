@@ -51,6 +51,7 @@ declare global {
             loadSession?: () => Promise<DesktopSessionFile | null>;
             saveSession?: (session: DesktopSessionFile) => Promise<{ ok?: boolean }>;
             clearSession?: () => Promise<{ ok?: boolean }>;
+            notifyAppShellReady?: () => Promise<{ ok?: boolean }>;
             getAppVersion?: () => Promise<string>;
             checkForUpdate?: () => Promise<{
                 status: string;

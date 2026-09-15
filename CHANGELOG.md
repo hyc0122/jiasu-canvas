@@ -1,11 +1,17 @@
 # CHANGELOG
 
+## v0.19.1
+
++ [修复] 桌面冷启动不再先露出主窗口黑底 + WorkspaceBootSplash 卡片；主窗口保持隐藏直到鉴权门控完成，再关闪屏并直接进入登录页或工作台。
++ [调整] 桌面端鉴权等待改由 Electron `splash.html` 承担，RequireAuth/GuestOnly 在桌面不再渲染黑底 splash；浏览器端行为不变。
++ [调整] 主窗口 `backgroundColor` 改为白色，避免短暂闪黑。
+
+## Unreleased
+
 ## v0.19.0
 
 + [调整] 产品对外品牌更名为**佳速画布**（包名 `jiasu-canvas`，下载页 `/d`）。
 + [调整] 热更路径改为 `jiasu-canvas/win-x64/`，避免与旧 interface-canvas 测试冲突。
-
-## Unreleased
 
 ## v0.18.10 - 2026-09-14
 

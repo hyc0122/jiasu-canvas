@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("interfaceCanvasDesktop", {
     loadSession: () => ipcRenderer.invoke("session:load"),
     saveSession: (session) => ipcRenderer.invoke("session:save", session),
     clearSession: () => ipcRenderer.invoke("session:clear"),
+    notifyAppShellReady: () => ipcRenderer.invoke("app-shell:ready"),
     getAppVersion: () => ipcRenderer.invoke("app:getVersion"),
     checkForUpdate: () => ipcRenderer.invoke("update:check"),
     downloadAndInstallUpdate: () => ipcRenderer.invoke("update:downloadAndInstall"),
