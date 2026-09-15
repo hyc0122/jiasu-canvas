@@ -183,6 +183,7 @@ function stageAgentPack() {
     const nmDest = path.join(dest, "node_modules");
     fs.cpSync(nmSrc, nmDest, {
         recursive: true,
+        dereference: true,
         filter: (from) => {
             const rel = path.relative(nmSrc, from);
             if (!rel || rel === ".") return true;

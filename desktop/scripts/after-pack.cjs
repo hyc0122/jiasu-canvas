@@ -16,7 +16,7 @@ module.exports = async function afterPack(context) {
         throw new Error(`[pack] staged agent pack missing express: ${stagedExpress}`);
     }
     fs.mkdirSync(dest, { recursive: true });
-    fs.cpSync(staged, dest, { recursive: true });
+    fs.cpSync(staged, dest, { recursive: true, dereference: true });
     const packedExpress = path.join(dest, "node_modules", "express");
     if (!fs.existsSync(packedExpress)) {
         throw new Error(`[pack] afterPack failed to place express at ${packedExpress}`);
