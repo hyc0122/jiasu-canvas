@@ -5,6 +5,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 
 # 待测试
 
+- Windows 热更新 EBUSY（0.19.2）：若本机曾卡在 `%APPDATA%\\佳速画布\\pending-update`，先手动删该目录；从 0.19.1 检查更新到 0.19.2 应能下载并重启成功；故意占用/杀毒扫描后再次更新也不应再弹裸 `EBUSY`（可出现中文清理提示）。
 - 吴心登录拦截：未登录访问 `/`、`/canvas`、`/config` 等业务页应跳到 `/login`。登录页为双栏深色：左侧循环播放 `/login-bg.mp4`（封面 `/login-bg-poster.jpg`）并叠暗色渐变与 slogan「让一张图，从想法落到画布。」，右侧为登录/注册页签，主按钮为白色「登录 →」「创建账号 →」。注册需用户名、邮箱、验证码、密码、确认密码和可选邀请码；注册成功后回到登录页签，不要自动登录。若账号开启 2FA，密码登录后应再要 6 位验证码。登录后顶栏应显示用户名并支持退出。本地开发时账号请求经 Vite `/__wuxin` 代理访问 `https://www.wuxin-ai.xyz`。access_token 过期时应尝试带 Cookie 调用 `POST /api/user/auth/refresh` 续期，失败则回到登录页。登录得到的 access_token 不得当作 `sk-` 去调模型 `/v1`。不要提交 `web/public/login-bg.mp4`。
 - 桌面封装：在 `desktop/` 执行 `npm install && npm run pack` 后，`release/` 应同时有安装包和绿色包。Linux 应为 AppImage 或 `.deb` 加上 `.tar.gz`；本机有 Wine 时应打出 Windows NSIS 安装程序和 portable 绿色包，否则可先出 zip，并在 `desktop/README.md` 说明如何在 Windows 上打 NSIS。打开应用应通过 `loadFile` 加载打包后的 `web-dist`（不是 localhost），能进入首页、画布和配置。`cd web && bun run build` 仍应使用站点根路径 `/`，不能把网站部署改成相对路径 `./`。
 - 本地代理：配置弹窗应在「渠道」和「偏好设置」之间出现独立的「本地代理」页签，开关默认关闭。打开后应显示 `npx @basketikun/canvas-proxy@latest` 启动命令（端口非默认时自动追加 `--port`）、复制按钮，以及默认 `http://127.0.0.1:23210` 的地址输入框，失焦时自动补全协议并去掉末尾斜杠；「测试连接」应只在命令已启动时成功。开启代理后，拉取模型列表、生图、生视频、生成文本（含流式输出）、生成音频、自定义调用脚本、视频任务轮询、生成结果图片和视频的下载，以及 WebDAV 测试连接与同步都应经代理转发且功能正常，关闭后恢复直连。代理本身应原样转发请求方法、请求头、查询参数和请求体，SSE 响应按块透传不缓冲，`data:` 和 `blob:` 地址不受影响。

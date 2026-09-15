@@ -5,6 +5,7 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Windows hot-update EBUSY (0.19.2): if stuck, delete `%APPDATA%\佳速画布\pending-update` once; check-for-update from 0.19.1 to 0.19.2 should download and restart; Defender/lock scenarios should not surface raw `EBUSY` (Chinese cleanup hint is OK).
 The current release needs manual verification in these areas:
 
 - 桌面冷启动：应只见白色 `splash.html` 清单，鉴权完成后直接进入登录页或工作台，不应出现主窗口黑底 + 白卡片中间态。

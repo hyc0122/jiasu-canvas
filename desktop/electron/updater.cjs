@@ -36,6 +36,9 @@ let updateState = {
 /** @type {((payload: { percent: number; status: string }) => void) | null} */
 let progressSink = null;
 
+const FRIENDLY_BUSY_ZH =
+    "更新文件被占用（常见于杀毒扫描）。请完全退出佳速画布后删除文件夹 %APPDATA%\\佳速画布\\pending-update，再重试「检查更新」；或直接安装最新绿色版 zip。";
+
 function compareSemver(a, b) {
     const parse = (v) => {
         const m = String(v || "")
@@ -54,8 +57,219 @@ function compareSemver(a, b) {
     return 0;
 }
 
+function sleep(ms) {
+    const AtomicsWait = typeof Atomics !== "undefined" && Atomics.wait;
+    if (AtomicsWait && typeof SharedArrayBuffer !== "undefined") {
+        try {
+            const sab = new SharedArrayBuffer(4);
+            const ia = new Int32Array(sab);
+            Atomics.wait(ia, 0, 0, ms);
+            return;
+        } catch {
+            // fall through
+        }
+    }
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+        // busy wait fallback for sync contexts
+    }
+}
+
+function isBusyError(err) {
+    if (!err) return false;
+    const code = err.code || "";
+    if (code === "EBUSY" || code === "EPERM" || code === "EACCES") return true;
+    const msg = String(err.message || err);
+    return /\bEBUSY\b|\bEPERM\b|\bEACCES\b|resource busy|locked/i.test(msg);
+}
+
+function friendlyError(err) {
+    if (isBusyError(err)) return FRIENDLY_BUSY_ZH;
+    return err && err.message ? err.message : String(err);
+}
+
 function pendingDir() {
     return path.join(app.getPath("userData"), "pending-update");
+}
+
+function trashDir() {
+    return path.join(app.getPath("userData"), "trash");
+}
+
+function activeStageMarker() {
+    return path.join(pendingDir(), "ACTIVE");
+}
+
+function renameAside(target) {
+    const base = path.basename(target);
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const trashName = `${base}.trash-${stamp}`;
+    const parent = path.dirname(target);
+    let dest = path.join(parent, trashName);
+    try {
+        fs.renameSync(target, dest);
+        return dest;
+    } catch {
+        try {
+            fs.mkdirSync(trashDir(), { recursive: true });
+            dest = path.join(trashDir(), trashName);
+            fs.renameSync(target, dest);
+            return dest;
+        } catch {
+            return null;
+        }
+    }
+}
+
+/**
+ * Remove a file/dir with retries. On final failure for a **file**, rename-aside
+ * and continue (never throw EBUSY for leftover trash).
+ * @param {string} target
+ * @param {{ retries?: number }} [opts]
+ */
+function rmWithRetry(target, opts = {}) {
+    const retries = opts.retries == null ? 8 : opts.retries;
+    if (!fs.existsSync(target)) return;
+    let lastErr = null;
+    for (let i = 0; i <= retries; i += 1) {
+        try {
+            fs.rmSync(target, { recursive: true, force: true });
+            return;
+        } catch (err) {
+            lastErr = err;
+            if (!isBusyError(err) || i === retries) break;
+            sleep(250 + i * 150);
+        }
+    }
+    if (!lastErr) return;
+    let isFile = false;
+    try {
+        isFile = fs.statSync(target).isFile();
+    } catch {
+        return;
+    }
+    if (isFile && isBusyError(lastErr)) {
+        if (renameAside(target)) return;
+        // leftover trash — do not throw EBUSY
+        return;
+    }
+    if (isBusyError(lastErr)) {
+        // directory still locked: try rename-aside the whole dir
+        if (renameAside(target)) return;
+        return;
+    }
+    throw lastErr;
+}
+
+/**
+ * Clear pending-update contents with retries. Locked app.asar is renamed aside;
+ * parent dir is kept / recreated fresh.
+ */
+function clearPendingDir() {
+    const dir = pendingDir();
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        return;
+    }
+    let entries = [];
+    try {
+        entries = fs.readdirSync(dir);
+    } catch (err) {
+        if (isBusyError(err)) {
+            renameAside(dir);
+            fs.mkdirSync(dir, { recursive: true });
+            return;
+        }
+        throw err;
+    }
+    for (const name of entries) {
+        const full = path.join(dir, name);
+        try {
+            rmWithRetry(full, { retries: 8 });
+        } catch (err) {
+            if (isBusyError(err)) {
+                renameAside(full);
+            } else {
+                throw err;
+            }
+        }
+    }
+    // If a locked app.asar (or anything) still remains, rename-aside and ensure dir exists
+    try {
+        const left = fs.readdirSync(dir);
+        for (const name of left) {
+            renameAside(path.join(dir, name));
+        }
+    } catch {
+        // ignore
+    }
+    try {
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    } catch {
+        renameAside(dir);
+        fs.mkdirSync(dir, { recursive: true });
+    }
+}
+
+/**
+ * Prefer unique stage subdir under pending-update.
+ * @param {string} version
+ */
+function createStageDir(version) {
+    const parent = pendingDir();
+    fs.mkdirSync(parent, { recursive: true });
+    const safeVer = String(version || "unknown").replace(/[^\w.-]+/g, "_");
+    const stage = path.join(parent, `stage-${safeVer}-${Date.now()}`);
+    fs.mkdirSync(stage, { recursive: true });
+    try {
+        fs.writeFileSync(activeStageMarker(), stage, "utf8");
+    } catch {
+        // ignore
+    }
+    return stage;
+}
+
+/**
+ * Resolve active stage: ACTIVE file, else newest stage-* with manifest.json,
+ * else pendingDir itself (legacy flat layout).
+ */
+function resolveActiveStageDir() {
+    const parent = pendingDir();
+    const marker = activeStageMarker();
+    if (fs.existsSync(marker)) {
+        try {
+            const p = fs.readFileSync(marker, "utf8").trim();
+            if (p && fs.existsSync(path.join(p, "manifest.json"))) return p;
+        } catch {
+            // fall through
+        }
+    }
+    if (!fs.existsSync(parent)) return parent;
+    let best = null;
+    let bestMtime = -1;
+    try {
+        for (const name of fs.readdirSync(parent)) {
+            if (!name.startsWith("stage-")) continue;
+            const full = path.join(parent, name);
+            const man = path.join(full, "manifest.json");
+            if (!fs.existsSync(man)) continue;
+            let mtime = 0;
+            try {
+                mtime = fs.statSync(man).mtimeMs;
+            } catch {
+                mtime = 0;
+            }
+            if (mtime >= bestMtime) {
+                bestMtime = mtime;
+                best = full;
+            }
+        }
+    } catch {
+        // ignore
+    }
+    if (best) return best;
+    if (fs.existsSync(path.join(parent, "manifest.json"))) return parent;
+    return parent;
 }
 
 function localAsarPath() {
@@ -64,7 +278,16 @@ function localAsarPath() {
 
 function sha256File(filePath) {
     const hash = crypto.createHash("sha256");
-    hash.update(fs.readFileSync(filePath));
+    const fd = fs.openSync(filePath, "r");
+    try {
+        const buf = Buffer.alloc(1024 * 1024);
+        let bytesRead;
+        while ((bytesRead = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+            hash.update(bytesRead === buf.length ? buf : buf.subarray(0, bytesRead));
+        }
+    } finally {
+        fs.closeSync(fd);
+    }
     return hash.digest("hex");
 }
 
@@ -106,7 +329,53 @@ async function downloadToFile(url, destPath, onChunk) {
         if (onChunk) onChunk(buf.length, total || buf.length);
         fs.writeFileSync(tmp, buf);
     }
-    fs.renameSync(tmp, destPath);
+
+    try {
+        if (fs.existsSync(destPath)) {
+            try {
+                fs.unlinkSync(destPath);
+            } catch (err) {
+                if (isBusyError(err)) {
+                    renameAside(destPath);
+                } else {
+                    throw err;
+                }
+            }
+        }
+        fs.renameSync(tmp, destPath);
+    } catch (err) {
+        if (isBusyError(err)) {
+            const alt = `${destPath}.new`;
+            try {
+                if (fs.existsSync(alt)) renameAside(alt);
+            } catch {
+                // ignore
+            }
+            try {
+                fs.renameSync(tmp, alt);
+            } catch {
+                fs.copyFileSync(tmp, alt);
+                try {
+                    fs.unlinkSync(tmp);
+                } catch {
+                    // ignore
+                }
+            }
+            if (fs.existsSync(destPath)) renameAside(destPath);
+            try {
+                fs.renameSync(alt, destPath);
+            } catch (err2) {
+                if (isBusyError(err2)) {
+                    // leave as dest.new — caller can still use alt if needed
+                    fs.copyFileSync(alt, destPath);
+                } else {
+                    throw err2;
+                }
+            }
+        } else {
+            throw err;
+        }
+    }
     return destPath;
 }
 
@@ -151,7 +420,7 @@ async function checkForUpdate() {
         emitProgress(0, updateState.status);
         return getStatus();
     } catch (error) {
-        const message = error && error.message ? error.message : String(error);
+        const message = friendlyError(error);
         updateState = {
             status: "error",
             localVersion: app.getVersion(),
@@ -174,9 +443,17 @@ async function downloadAndStageUpdate(manifest) {
     const files = Array.isArray(manifest.files) ? manifest.files : [];
     if (!files.length) throw new Error("manifest has no files");
 
-    const dir = pendingDir();
-    fs.rmSync(dir, { recursive: true, force: true });
-    fs.mkdirSync(dir, { recursive: true });
+    try {
+        clearPendingDir();
+    } catch (err) {
+        if (isBusyError(err)) {
+            throw new Error(FRIENDLY_BUSY_ZH);
+        }
+        throw err;
+    }
+
+    const version = String(manifest.version || "").replace(/^v/i, "") || "unknown";
+    const dir = createStageDir(version);
 
     const staged = [];
     let index = 0;
@@ -216,15 +493,21 @@ async function downloadAndStageUpdate(manifest) {
         resourcesPath: process.resourcesPath,
         execPath: process.execPath,
         pid: process.pid,
+        stageDir: dir,
         stagedAt: new Date().toISOString(),
     };
     fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(pendingManifest, null, 2));
+    try {
+        fs.writeFileSync(activeStageMarker(), dir, "utf8");
+    } catch {
+        // ignore
+    }
     emitProgress(100, "staged");
     updateState = {
         ...updateState,
         status: "staged",
         progress: 100,
-        remoteVersion: String(manifest.version || "").replace(/^v/i, ""),
+        remoteVersion: version,
         notes: manifest.notes || "",
         manifest,
         updateAvailable: true,
@@ -232,23 +515,56 @@ async function downloadAndStageUpdate(manifest) {
     return getStatus();
 }
 
-function writeApplyScript(resourcesPath, execPath, dir) {
+function writeApplyScript(resourcesPath, execPath, dir, pid) {
     const isWin = process.platform === "win32";
     if (isWin) {
         const bat = path.join(dir, "apply-update.bat");
+        const pidStr = String(pid || process.pid);
         const lines = [
             "@echo off",
-            "setlocal",
-            "timeout /t 2 /nobreak >nul",
+            "setlocal EnableExtensions",
             `set "SRC=${dir}"`,
             `set "RES=${resourcesPath}"`,
             `set "EXE=${execPath}"`,
-            'if exist "%SRC%\\app.asar" copy /Y "%SRC%\\app.asar" "%RES%\\app.asar" >nul',
-            'if exist "%SRC%\\manifest.json" (',
-            "  rem optional extra files next to app.asar",
+            `set "PID=${pidStr}"`,
+            "set /a WAITED=0",
+            ":wait_pid",
+            'if "%PID%"=="" goto do_copy',
+            'tasklist /FI "PID eq %PID%" 2>nul | find "%PID%" >nul',
+            "if errorlevel 1 goto do_copy",
+            "timeout /t 1 /nobreak >nul",
+            "set /a WAITED+=1",
+            "if %WAITED% GEQ 60 goto do_copy",
+            "goto wait_pid",
+            ":do_copy",
+            "set /a TRY=0",
+            ":copy_loop",
+            'if not exist "%SRC%\\app.asar" goto after_copy',
+            'copy /Y "%SRC%\\app.asar" "%RES%\\app.asar" >nul 2>&1',
+            "if not errorlevel 1 goto after_copy",
+            "set /a TRY+=1",
+            "if %TRY% GEQ 20 (",
+            "  echo copy failed after retries",
+            "  goto cleanup",
+            ")",
+            "timeout /t 1 /nobreak >nul",
+            "goto copy_loop",
+            ":after_copy",
+            'if exist "%SRC%\\app.asar" (',
+            '  rem verify copy roughly by size presence',
+            '  if not exist "%RES%\\app.asar" goto cleanup',
             ")",
             'start "" "%EXE%"',
+            ":cleanup",
+            "set /a DTRY=0",
+            ":del_loop",
             'rd /s /q "%SRC%" >nul 2>&1',
+            'if not exist "%SRC%" goto done',
+            "set /a DTRY+=1",
+            "if %DTRY% GEQ 10 goto done",
+            "timeout /t 1 /nobreak >nul",
+            "goto del_loop",
+            ":done",
             "endlocal",
         ];
         fs.writeFileSync(bat, `${lines.join("\r\n")}\r\n`, "utf8");
@@ -256,17 +572,36 @@ function writeApplyScript(resourcesPath, execPath, dir) {
     }
 
     const sh = path.join(dir, "apply-update.sh");
+    const pidStr = String(pid || process.pid);
     const script = `#!/bin/bash
-set -e
-sleep 2
+set +e
 SRC=${JSON.stringify(dir)}
 RES=${JSON.stringify(resourcesPath)}
 EXE=${JSON.stringify(execPath)}
+PID=${JSON.stringify(pidStr)}
+WAITED=0
+while [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; do
+  sleep 1
+  WAITED=$((WAITED+1))
+  if [ "$WAITED" -ge 60 ]; then break; fi
+done
+TRY=0
 if [ -f "$SRC/app.asar" ]; then
-  cp -f "$SRC/app.asar" "$RES/app.asar"
+  while [ "$TRY" -lt 20 ]; do
+    if cp -f "$SRC/app.asar" "$RES/app.asar"; then break; fi
+    TRY=$((TRY+1))
+    sleep 1
+  done
 fi
-nohup "$EXE" >/dev/null 2>&1 &
-rm -rf "$SRC"
+if [ -f "$RES/app.asar" ] || [ ! -f "$SRC/app.asar" ]; then
+  nohup "$EXE" >/dev/null 2>&1 &
+fi
+DTRY=0
+while [ "$DTRY" -lt 10 ]; do
+  rm -rf "$SRC" && break
+  DTRY=$((DTRY+1))
+  sleep 1
+done
 `;
     fs.writeFileSync(sh, script, { mode: 0o755 });
     try {
@@ -278,13 +613,14 @@ rm -rf "$SRC"
 }
 
 function spawnDetachedApplyer() {
-    const dir = pendingDir();
+    const dir = resolveActiveStageDir();
     const manifestPath = path.join(dir, "manifest.json");
     if (!fs.existsSync(manifestPath)) throw new Error("no pending update to apply");
     const pending = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
     const resourcesPath = pending.resourcesPath || process.resourcesPath;
     const execPath = pending.execPath || process.execPath;
-    const script = writeApplyScript(resourcesPath, execPath, dir);
+    const pid = pending.pid || process.pid;
+    const script = writeApplyScript(resourcesPath, execPath, dir, pid);
 
     if (process.platform === "win32") {
         spawn("cmd.exe", ["/c", script], {
@@ -322,7 +658,7 @@ async function downloadAndInstallUpdate() {
         }, 300);
         return { ok: true, ...getStatus() };
     } catch (error) {
-        const message = error && error.message ? error.message : String(error);
+        const message = friendlyError(error);
         updateState = { ...updateState, status: "error", error: message };
         emitProgress(updateState.progress || 0, "error");
         return { ok: false, error: message, ...getStatus() };
@@ -335,7 +671,7 @@ async function downloadAndInstallUpdate() {
  */
 function tryApplyPendingOnStartup() {
     if (!app.isPackaged) return false;
-    const dir = pendingDir();
+    const dir = resolveActiveStageDir();
     const manifestPath = path.join(dir, "manifest.json");
     if (!fs.existsSync(manifestPath)) return false;
     try {
@@ -352,7 +688,17 @@ function tryApplyPendingOnStartup() {
                 return false;
             }
         }
-        fs.rmSync(dir, { recursive: true, force: true });
+        try {
+            rmWithRetry(dir, { retries: 8 });
+        } catch {
+            // ignore leftover
+        }
+        try {
+            const marker = activeStageMarker();
+            if (fs.existsSync(marker)) rmWithRetry(marker, { retries: 3 });
+        } catch {
+            // ignore
+        }
         return true;
     } catch {
         return false;
@@ -382,4 +728,8 @@ module.exports = {
     registerUpdateIpc,
     tryApplyPendingOnStartup,
     compareSemver,
+    sleep,
+    isBusyError,
+    rmWithRetry,
+    clearPendingDir,
 };

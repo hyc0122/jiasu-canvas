@@ -1,12 +1,17 @@
 # CHANGELOG
 
+## v0.19.2
+
++ [修复] Windows 热更新在 Defender/句柄占用 `app.asar` 时不再因 `EBUSY`/`EPERM` 直接失败：清理 pending 带重试与 rename-aside，分 stage 子目录 staging，下载与校验流式处理；apply bat 等待进程退出并重试 copy。
++ [调整] 若仍失败，界面给出中文提示（关闭应用后删除 `%APPDATA%\佳速画布\pending-update` 或安装绿色版 zip）。
+
+## Unreleased
+
 ## v0.19.1
 
 + [修复] 桌面冷启动不再先露出主窗口黑底 + WorkspaceBootSplash 卡片；主窗口保持隐藏直到鉴权门控完成，再关闪屏并直接进入登录页或工作台。
 + [调整] 桌面端鉴权等待改由 Electron `splash.html` 承担，RequireAuth/GuestOnly 在桌面不再渲染黑底 splash；浏览器端行为不变。
 + [调整] 主窗口 `backgroundColor` 改为白色，避免短暂闪黑。
-
-## Unreleased
 
 ## v0.19.0
 
