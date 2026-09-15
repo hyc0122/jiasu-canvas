@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>佳速画布</title>
+  <style>
+    :root {
+      --paper: #f7f8fb;
+      --card: #ffffff;
+      --ink: #1a1d24;
+      --muted: #6b7280;
+      --track: #e8ecf2;
+      --primary: #2F6BFF;
+      --ok: #3dd6c6;
+      --fail: #ef4444;
+      --spin: 2s;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--card);
+      font-family: "IBM Plex Sans", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      user-select: none;
+      -webkit-app-region: drag;
+    }
+    .win {
+      width: 100%;
+      height: 100%;
+      background: var(--card);
+      display: flex;
+      flex-direction: column;
+    }
+    .bar {
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--track);
+      font-size: 14px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .mark {
+      width: 20px; height: 20px; border-radius: 999px;
+      background: var(--ink); color: var(--card);
+      display: grid; place-items: center; font-size: 10px; margin-right: 8px;
+    }
+    .title { display: flex; align-items: center; }
+    .body {
+      padding: 24px;
+      flex: 1;
+      -webkit-app-region: no-drag;
+    }
+    .head { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+    .spinner {
+      width: 48px; height: 48px; flex-shrink: 0; color: var(--primary);
+      filter: drop-shadow(0 0 6px color-mix(in srgb, var(--primary) 70%, transparent));
+    }
+    .spin { animation: spin var(--spin) linear infinite; transform-origin: center; transform-box: fill-box; }
+    .spin-rev { animation: spin-rev var(--spin) linear infinite; transform-origin: center; transform-box: fill-box; }
+    h1 { font-size: 18px; font-weight: 600; }
+    .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .progress { height: 8px; background: var(--track); border-radius: 999px; overflow: hidden; }
+    .progress > i {
+      display: block; height: 100%; width: 0%;
+      background: var(--primary); border-radius: 999px;
+      transition: width 0.35s ease;
+    }
+    ul { list-style: none; margin-top: 12px; }
+    li {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0; font-size: 14px;
+      border-top: 1px solid var(--track);
+    }
+    .left { display: flex; align-items: center; gap: 8px; }
+    .dot {
+      width: 16px; height: 16px; border-radius: 999px;
+      display: grid; place-items: center; font-size: 10px;
+      border: 1px solid var(--track);
+    }
+    .done .dot { background: var(--ok); border-color: var(--ok); color: #07090f; }
+    .now .dot { border: 2px solid var(--primary); }
+    .fail .dot { background: var(--fail); border-color: var(--fail); color: #fff; }
+    .wait { color: var(--muted); }
+    .st { font-size: 12px; }
+    .done .st { color: var(--ok); }
+    .now .st { color: var(--primary); }
+    .fail .st { color: var(--fail); }
+    .wait .st { color: var(--muted); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes spin-rev { to { transform: rotate(-360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .spin, .spin-rev { animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="win" role="dialog" aria-labelledby="dlg-title" aria-busy="true">
+    <div class="bar">
+      <span class="title"><span class="mark">▶</span>佳速画布</span>
+    </div>
+    <div class="body">
+      <div class="head">
+        <svg class="spinner" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <ellipse class="spin" cx="32" cy="32" rx="26" ry="10" stroke="currentColor" stroke-width="2" />
+          <ellipse class="spin-rev" cx="32" cy="32" rx="10" ry="26" stroke="currentColor" stroke-width="2" />
+          <ellipse cx="32" cy="32" rx="22" ry="22" stroke="currentColor" stroke-opacity="0.18" stroke-width="1.2" />
+          <circle cx="32" cy="32" r="3.5" fill="currentColor" />
+        </svg>
+        <div>
+          <h1 id="dlg-title">正在准备你的工作台</h1>
+          <p class="sub" id="splash-sub">启动中</p>
+        </div>
+      </div>
+      <div class="progress"><i id="splash-bar"></i></div>
+      <ul id="splash-steps">
+        <li class="wait" data-step="0"><span class="left"><span class="dot"></span>检查运行环境</span><span class="st">等待中</span></li>
+        <li class="wait" data-step="1"><span class="left"><span class="dot"></span>启动画布服务</span><span class="st">等待中</span></li>
+        <li class="wait" data-step="2"><span class="left"><span class="dot"></span>加载界面资源</span><span class="st">等待中</span></li>
+        <li class="wait" data-step="3"><span class="left"><span class="dot"></span>打开工作台</span><span class="st">等待中</span></li>
+      </ul>
+    </div>
+  </div>
+  <script>
+    const LABELS = { done: "完成", now: "进行中...", wait: "等待中", fail: "失败" };
+    window.__splashUpdate = function (payload) {
+      try {
+        const steps = payload && Array.isArray(payload.steps) ? payload.steps : null;
+        const percent = payload && typeof payload.percent === "number" ? payload.percent : null;
+        const subtitle = payload && typeof payload.subtitle === "string" ? payload.subtitle : null;
+        const list = document.querySelectorAll("#splash-steps li");
+        if (steps) {
+          steps.forEach(function (state, index) {
+            const li = list[index];
+            if (!li) return;
+            li.className = state;
+            const dot = li.querySelector(".dot");
+            const st = li.querySelector(".st");
+            if (dot) dot.textContent = state === "done" ? "✓" : state === "fail" ? "!" : "";
+            if (st) st.textContent = LABELS[state] || LABELS.wait;
+          });
+        }
+        if (percent !== null) {
+          const bar = document.getElementById("splash-bar");
+          if (bar) bar.style.width = Math.max(0, Math.min(100, percent)) + "%";
+        }
+        if (subtitle !== null) {
+          const sub = document.getElementById("splash-sub");
+          if (sub) sub.textContent = subtitle;
+        }
+      } catch (e) {}
+    };
+  </script>
+</body>
+</html>
