@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v0.19.0
+
++ [调整] 产品对外品牌更名为**佳速画布**（包名 `jiasu-canvas`，下载页 `/d`）。
++ [调整] 热更路径改为 `jiasu-canvas/win-x64/`，避免与旧 interface-canvas 测试冲突。
+
 ## Unreleased
 
 ## v0.18.10 - 2026-09-14
