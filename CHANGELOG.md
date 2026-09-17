@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## Unreleased
+
+## v0.19.5
+
++ [修复] 佳速协议生图改为仅走异步 `POST /images/create` + 轮询 `GET /images/tasks/{id}`，去掉失败后回退同步 `/images/generations`（任务插件渠道会 500）；创建响应解析支持 `resolution: 1K/2K/4K`。
+
 ## v0.19.4
 
 + [调整] 自动猜测模型能力：扩充视频关键词（seedance / sora / veo / kling / hailuo / runway / luma / pika / minimax / vidu / wan 等），并对佳速/NewAPI 的 `sd-2.0-...` 类视频 id 做边界匹配（避免把 `sdxl` 误判为视频）。

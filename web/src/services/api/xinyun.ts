@@ -13,18 +13,38 @@ type ImageCreateResponse = {
     id?: string;
     task_id?: string;
     status?: string;
+    message?: string;
     error?: { message?: string };
-    data?: { id?: string; task_id?: string };
+    data?: {
+        id?: string;
+        task_id?: string;
+        data?: { id?: string; task_id?: string };
+        task?: { id?: string; task_id?: string };
+    };
+    task?: { id?: string; task_id?: string };
 };
 
 type ImageTaskResponse = {
     code?: string | number;
     message?: string;
+    status?: string;
+    result_url?: string;
+    url?: string;
+    result_urls?: string[];
     data?: {
         status?: string;
         fail_reason?: string;
         result_url?: string;
+        url?: string;
+        result_urls?: string[];
         progress?: string;
+        data?: {
+            status?: string;
+            result_url?: string;
+            url?: string;
+            result_urls?: string[];
+            fail_reason?: string;
+        };
     };
     error?: { message?: string };
 };
@@ -84,13 +104,23 @@ export function resolveXinyunImageRatio(size: string) {
     return undefined;
 }
 
-export function resolveXinyunImageResolution(quality: string) {
-    const value = quality.trim().toLowerCase();
-    if (!value || value === "auto") return undefined;
-    if (value === "low" || value === "1k" || value === "standard") return "1k";
-    if (value === "medium" || value === "2k" || value === "hd") return "2k";
-    if (value === "high" || value === "4k") return "2k";
-    if (/^\d+k$/i.test(value) || /^\d+p$/i.test(value)) return value.toLowerCase();
+export function resolveXinyunImageResolution(quality: string, model = "") {
+    const fromQuality = normalizeXinyunImageResolutionToken(quality);
+    if (fromQuality) return fromQuality;
+    const fromModel = String(model || "").match(/(?:^|[-_])(\d+)k(?:$|[-_])/i);
+    if (fromModel) return `${fromModel[1]}K`;
+    return undefined;
+}
+
+function normalizeXinyunImageResolutionToken(value: string) {
+    const raw = value.trim();
+    if (!raw || raw.toLowerCase() === "auto") return undefined;
+    const lower = raw.toLowerCase();
+    if (lower === "low" || lower === "1k" || lower === "standard") return "1K";
+    if (lower === "medium" || lower === "2k" || lower === "hd") return "2K";
+    if (lower === "high" || lower === "4k") return "4K";
+    const match = lower.match(/^(\d+)k$/);
+    if (match) return `${match[1]}K`;
     return undefined;
 }
 
@@ -149,13 +179,17 @@ export async function createXinyunImageTask(
     referenceUrls: string[] = [],
     options?: RequestOptions,
 ) {
+    const model = modelOptionName(config.model);
     const body: Record<string, unknown> = {
-        model: modelOptionName(config.model),
+        model,
         prompt,
     };
     const ratio = resolveXinyunImageRatio(config.size);
-    const resolution = resolveXinyunImageResolution(config.quality);
-    if (ratio) body.ratio = ratio;
+    const resolution = resolveXinyunImageResolution(config.quality, model);
+    if (ratio) {
+        body.ratio = ratio;
+        body.aspect_ratio = ratio;
+    }
     if (resolution) body.resolution = resolution;
     if (referenceUrls.length === 1) body.image = referenceUrls[0];
     if (referenceUrls.length) body.images = referenceUrls;
@@ -164,8 +198,11 @@ export async function createXinyunImageTask(
             headers: xinyunHeaders(config, "application/json"),
             signal: options?.signal,
         });
-        const taskId = response.data.task_id || response.data.id || response.data.data?.task_id || response.data.data?.id;
-        if (!taskId) throw new Error(apiText("noVideoTaskId"));
+        const taskId = extractXinyunTaskId(response.data);
+        if (!taskId) {
+            const hint = response.data.error?.message || response.data.message || apiText("noVideoTaskId");
+            throw new Error(hint);
+        }
         return String(taskId);
     } catch (error) {
         throw new Error(readXinyunAxiosError(error, apiText("requestFailed")));
@@ -179,14 +216,22 @@ export async function pollXinyunImageTask(config: Pick<AiConfig, "baseUrl" | "ap
             signal: options?.signal,
         });
         const payload = response.data;
-        const status = String(payload.data?.status || "").toUpperCase();
-        if (status === "SUCCESS") {
-            const url = payload.data?.result_url;
+        const status = extractXinyunImageTaskStatus(payload);
+        if (status === "success" || status === "completed" || status === "succeeded") {
+            const url = extractXinyunImageResultUrl(payload);
             if (!url) throw new Error(apiText("noImageReturned"));
             return { status: "completed" as const, url };
         }
-        if (status === "FAILURE") {
-            return { status: "failed" as const, error: payload.data?.fail_reason || payload.message || apiText("requestFailed") };
+        if (status === "failure" || status === "failed" || status === "error") {
+            return {
+                status: "failed" as const,
+                error:
+                    payload.data?.fail_reason ||
+                    payload.data?.data?.fail_reason ||
+                    payload.error?.message ||
+                    payload.message ||
+                    apiText("requestFailed"),
+            };
         }
         return { status: "pending" as const };
     } catch (error) {
@@ -205,6 +250,7 @@ export async function waitForXinyunImageTask(config: Pick<AiConfig, "baseUrl" | 
     throw new Error(apiText("requestFailed"));
 }
 
+/** @deprecated Task-plugin models must use create + poll; do not call /images/generations. */
 export async function generateXinyunImageSync(
     config: Pick<AiConfig, "baseUrl" | "apiKey" | "model" | "size" | "quality">,
     prompt: string,
@@ -244,22 +290,13 @@ export async function requestXinyunImages(
     options?: RequestOptions,
 ) {
     const count = Math.max(1, Math.min(15, n));
-    try {
-        const urls = await Promise.all(
-            Array.from({ length: count }, async () => {
-                const taskId = await createXinyunImageTask(config, prompt, referenceUrls, options);
-                return waitForXinyunImageTask(config, taskId, options);
-            }),
-        );
-        return urls;
-    } catch (asyncError) {
-        if (referenceUrls.length) throw asyncError;
-        try {
-            return await generateXinyunImageSync(config, prompt, count, options);
-        } catch {
-            throw asyncError;
-        }
-    }
+    const urls = await Promise.all(
+        Array.from({ length: count }, async () => {
+            const taskId = await createXinyunImageTask(config, prompt, referenceUrls, options);
+            return waitForXinyunImageTask(config, taskId, options);
+        }),
+    );
+    return urls;
 }
 
 export async function createXinyunVideoTask(
@@ -395,6 +432,51 @@ export async function streamXinyunChat(
         }
     }
     return text;
+}
+
+
+function extractXinyunTaskId(payload: ImageCreateResponse | Record<string, unknown> | null | undefined): string {
+    if (!payload || typeof payload !== "object") return "";
+    const record = payload as Record<string, unknown>;
+    const candidates = [
+        record.task_id,
+        record.id,
+        (record.data as Record<string, unknown> | undefined)?.task_id,
+        (record.data as Record<string, unknown> | undefined)?.id,
+        ((record.data as Record<string, unknown> | undefined)?.data as Record<string, unknown> | undefined)?.task_id,
+        ((record.data as Record<string, unknown> | undefined)?.data as Record<string, unknown> | undefined)?.id,
+        ((record.data as Record<string, unknown> | undefined)?.task as Record<string, unknown> | undefined)?.task_id,
+        ((record.data as Record<string, unknown> | undefined)?.task as Record<string, unknown> | undefined)?.id,
+        (record.task as Record<string, unknown> | undefined)?.task_id,
+        (record.task as Record<string, unknown> | undefined)?.id,
+    ];
+    for (const value of candidates) {
+        if (value == null || value === "") continue;
+        return String(value);
+    }
+    return "";
+}
+
+function extractXinyunImageTaskStatus(payload: ImageTaskResponse) {
+    const nested = payload.data?.data;
+    const raw = payload.data?.status || nested?.status || payload.status || "";
+    return String(raw).trim().toLowerCase();
+}
+
+function extractXinyunImageResultUrl(payload: ImageTaskResponse) {
+    const nested = payload.data?.data;
+    const list = [
+        payload.data?.result_url,
+        payload.data?.url,
+        ...(Array.isArray(payload.data?.result_urls) ? payload.data.result_urls : []),
+        nested?.result_url,
+        nested?.url,
+        ...(Array.isArray(nested?.result_urls) ? nested.result_urls : []),
+        payload.result_url,
+        payload.url,
+        ...(Array.isArray(payload.result_urls) ? payload.result_urls : []),
+    ];
+    return list.map((item) => String(item || "").trim()).find(Boolean) || "";
 }
 
 function dataUrlToFile(dataUrl: string, kind: "image" | "video" | "audio") {
