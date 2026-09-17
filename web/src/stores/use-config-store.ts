@@ -74,22 +74,22 @@ export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
-export const XINYUN_BASE_URL = "https://api.wuxin-ai.xyz";
+export const XINYUN_BASE_URL = "https://ai.jiasuapi.com";
 export const LOCAL_PROXY_PACKAGE = "@basketikun/canvas-proxy";
 export const DEFAULT_LOCAL_PROXY_URL = "http://127.0.0.1:23210";
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
-    baseUrl: OPENAI_BASE_URL,
+    baseUrl: XINYUN_BASE_URL,
     apiKey: "",
-    apiFormat: "openai",
+    apiFormat: "xinyun",
     channels: [
         {
             id: "default",
             name: i18n.t("config.channels.defaultName"),
-            baseUrl: OPENAI_BASE_URL,
+            baseUrl: XINYUN_BASE_URL,
             apiKey: "",
-            apiFormat: "openai",
+            apiFormat: "xinyun",
             models: [
                 { name: "gpt-image-2", capability: "image" },
                 { name: "grok-imagine-video", capability: "video" },
@@ -302,7 +302,7 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
 }
 
 export function createModelChannel(channel?: Partial<ModelChannel>): ModelChannel {
-    const apiFormat = normalizeApiFormat(channel?.apiFormat);
+    const apiFormat = normalizeApiFormat(channel?.apiFormat ?? "xinyun");
     return {
         id: channel?.id?.trim() || nanoid(),
         name: channel?.name?.trim() || i18n.t("config.channels.newName"),

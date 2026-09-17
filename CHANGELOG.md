@@ -1,11 +1,17 @@
 # CHANGELOG
 
+## v0.19.3
+
++ [调整] 佳速协议（apiFormat `xinyun`）默认 Base URL 改为 `https://ai.jiasuapi.com`；新建/切换协议时使用新地址，不强制改写已保存渠道。
++ [调整] 全新安装默认渠道改为佳速协议（`https://ai.jiasuapi.com`），渠道名「佳速」。
++ [调整] 渠道编辑器 Base URL 占位符随当前协议默认值显示。
+
+## Unreleased
+
 ## v0.19.2
 
 + [修复] Windows 热更新在 Defender/句柄占用 `app.asar` 时不再因 `EBUSY`/`EPERM` 直接失败：清理 pending 带重试与 rename-aside，分 stage 子目录 staging，下载与校验流式处理；apply bat 等待进程退出并重试 copy。
 + [调整] 若仍失败，界面给出中文提示（关闭应用后删除 `%APPDATA%\佳速画布\pending-update` 或安装绿色版 zip）。
-
-## Unreleased
 
 ## v0.19.1
 

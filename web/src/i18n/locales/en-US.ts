@@ -579,7 +579,7 @@ export default {
             modelCount: "{{count}} models",
             missingUrl: "API endpoint not set",
             keepOne: "Keep at least one provider",
-            defaultName: "Default provider",
+            defaultName: "Jiasu",
             newName: "New provider",
             indexedName: "Provider {{index}}",
         },
