@@ -5,6 +5,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 
 # 待测试
 
+- 模型能力猜测（0.19.4）：拉取模型后 `sd-2.0-...` / `seedance` 应默认为视频，`sdxl` / `gpt-image-2` 为图像，`gpt-5` 为文本；渠道编辑器可覆盖。
 - 全新安装默认渠道（0.19.3）：首个渠道应为「佳速」+ 佳速协议，Base URL `https://ai.jiasuapi.com`；已有本地保存配置不被覆盖。
 - 佳速协议默认 Base URL（0.19.3）：新建渠道或切换到「佳速协议」时 Base URL 应为 `https://ai.jiasuapi.com`；已保存且仍指向 `api.wuxin-ai.xyz` 的渠道不被强制改写；吴心登录域名 `www.wuxin-ai.xyz` 不变。
 - Windows 热更新 EBUSY（0.19.2）：若本机曾卡在 `%APPDATA%\\佳速画布\\pending-update`，先手动删该目录；从 0.19.1 检查更新到 0.19.2 应能下载并重启成功；故意占用/杀毒扫描后再次更新也不应再弹裸 `EBUSY`（可出现中文清理提示）。

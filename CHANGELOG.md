@@ -1,12 +1,15 @@
 # CHANGELOG
 
+## v0.19.4
+
++ [调整] 自动猜测模型能力：扩充视频关键词（seedance / sora / veo / kling / hailuo / runway / luma / pika / minimax / vidu / wan 等），并对佳速/NewAPI 的 `sd-2.0-...` 类视频 id 做边界匹配（避免把 `sdxl` 误判为视频）。
++ [调整] 略微扩充图像/音频猜测关键词；渠道编辑器中仍可手动覆盖能力。
+
 ## v0.19.3
 
 + [调整] 佳速协议（apiFormat `xinyun`）默认 Base URL 改为 `https://ai.jiasuapi.com`；新建/切换协议时使用新地址，不强制改写已保存渠道。
 + [调整] 全新安装默认渠道改为佳速协议（`https://ai.jiasuapi.com`），渠道名「佳速」。
 + [调整] 渠道编辑器 Base URL 占位符随当前协议默认值显示。
-
-## Unreleased
 
 ## v0.19.2
 

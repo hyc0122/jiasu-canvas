@@ -147,17 +147,95 @@ type ConfigStore = {
     clearPromptContinue: () => void;
 };
 
-const VIDEO_KEYWORDS = ["video", "sora", "veo", "kling", "wan", "hailuo"];
+const VIDEO_KEYWORDS = [
+    "video",
+    "seedance",
+    "seedance-",
+    "sora",
+    "veo",
+    "kling",
+    "hailuo",
+    "runway",
+    "luma",
+    "pika",
+    "minimax",
+    "vidu",
+    "cogvideox",
+    "wanx",
+    "wan",
+    "hunyuan-video",
+    "hunyuanvideo",
+    "mochi",
+    "gen-3",
+    "gen3",
+    "dream-machine",
+    "animate",
+    "i2v",
+    "t2v",
+    "text-to-video",
+    "image-to-video",
+    "grok-imagine-video",
+    "jimeng",
+    "luma-dream",
+    "luma-ray",
+    "ray2",
+    "ray-2",
+    "keling",
+    "kuaishou",
+    "doubao-video",
+    "doubao-seedance",
+    "viggle",
+    "haiper",
+    "lumaai",
+    "openai-sora",
+    "gemini-veo",
+    "moonvalley",
+    "ltx-video",
+    "ltxv",
+    "hunyuan_video",
+    "cogvideo",
+    "open-sora",
+    "opensora",
+];
+
+/** NewAPI/佳速 video ids like sd-2.0-... — never bare "sd" (would catch sdxl). */
+const SD_VIDEO_RE = /(?:^|[-_/.])sd(?:[-_./]|\d)/i;
+const SD_IMAGE_EXCLUDE = ["sdxl", "stable-diffusion", "stable-diff", "sd3", "sd-3", "sdxl-"];
+
+function isSdFamilyVideo(value: string): boolean {
+    if (SD_IMAGE_EXCLUDE.some((keyword) => value.includes(keyword))) return false;
+    if (value.includes("seedance")) return true;
+    return SD_VIDEO_RE.test(value);
+}
 
 export function boolConfig(value: string, fallback: boolean) {
     return value ? value === "true" : fallback;
 }
-const AUDIO_KEYWORDS = ["audio", "tts", "speech", "voice", "music", "sound"];
-const IMAGE_KEYWORDS = ["seedream", "gpt-image", "image", "dall-e", "dalle", "imagen", "flux", "sdxl", "stable-diffusion", "midjourney"];
+const AUDIO_KEYWORDS = ["audio", "tts", "speech", "voice", "music", "sound", "whisper", "suno", "eleven", "udio"];
+const IMAGE_KEYWORDS = [
+    "seedream",
+    "gpt-image",
+    "image",
+    "dall-e",
+    "dalle",
+    "imagen",
+    "flux",
+    "sdxl",
+    "sd3",
+    "stable-diffusion",
+    "stable-diff",
+    "midjourney",
+    "ideogram",
+    "recraft",
+    "kolors",
+    "qwen-image",
+    "grok-imagine",
+];
 
 /** Best-effort default capability for a freshly fetched model name; user can override in the channel editor. */
 export function guessCapability(name: string): ModelCapability {
     const value = name.toLowerCase();
+    if (isSdFamilyVideo(value)) return "video";
     if (VIDEO_KEYWORDS.some((keyword) => value.includes(keyword))) return "video";
     if (AUDIO_KEYWORDS.some((keyword) => value.includes(keyword))) return "audio";
     if (IMAGE_KEYWORDS.some((keyword) => value.includes(keyword))) return "image";

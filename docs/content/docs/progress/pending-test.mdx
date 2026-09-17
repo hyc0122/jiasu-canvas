@@ -5,6 +5,7 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Model capability guess (0.19.4): fetched models like `sd-2.0-...` / `seedance` should default to video; `sdxl` / `gpt-image-2` to image; `gpt-5` to text; channel editor override still works.
 - Fresh install default channel (0.19.3): first channel should be 佳速协议 named 「佳速」 with Base URL `https://ai.jiasuapi.com`; existing saved configs must not be overwritten.
 - Jiasu protocol default Base URL (0.19.3): creating a channel or switching to 佳速协议 should fill Base URL `https://ai.jiasuapi.com`; existing saved channels still on `api.wuxin-ai.xyz` must not be force-rewritten; Wuxin login host `www.wuxin-ai.xyz` unchanged.
 - Windows hot-update EBUSY (0.19.2): if stuck, delete `%APPDATA%\佳速画布\pending-update` once; check-for-update from 0.19.1 to 0.19.2 should download and restart; Defender/lock scenarios should not surface raw `EBUSY` (Chinese cleanup hint is OK).
